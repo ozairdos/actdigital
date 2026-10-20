@@ -97,6 +97,26 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_requests_with_same_idempotency_key_return_same_loan()
+    {
+        var book = await CreateBookAsync(1);
+        var reader = await CreateReaderAsync();
+        var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
+        var firstRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-same-key");
+        var secondRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-same-key");
+
+        var responses = await Task.WhenAll(client.SendAsync(firstRequest), client.SendAsync(secondRequest));
+        var loans = await Task.WhenAll(responses.Select(response => response.Content.ReadFromJsonAsync<LoanResponse>()));
+
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+        Assert.All(loans, loan => Assert.Equal(loans[0]!.Id, loan!.Id));
+
+        var history = await client.GetFromJsonAsync<LoanResponse[]>($"/books/{book.Id}/history");
+        Assert.Single(history!);
+    }
+
+    [Fact]
     public async Task Return_and_cancel_keep_loans_in_history()
     {
         var book = await CreateBookAsync(2);

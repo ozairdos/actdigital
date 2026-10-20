@@ -61,6 +61,14 @@ public sealed class LoanService(
 
             if (decremented == 0)
             {
+                var concurrentReplay = await dbContext.IdempotencyRecords.AsNoTracking()
+                    .SingleOrDefaultAsync(record => record.Key == idempotencyKey, cancellationToken);
+                if (concurrentReplay is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return await ReplayAsync(concurrentReplay, fingerprint, cancellationToken);
+                }
+
                 var bookExists = await dbContext.Books.AnyAsync(book => book.Id == request.BookId && book.IsActive, cancellationToken);
                 if (!bookExists)
                 {
