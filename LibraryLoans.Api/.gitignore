@@ -1,0 +1,12 @@
+## Build outputs
+**/bin/
+**/obj/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+
+## Local configuration and secrets
+appsettings.Local.json
+secrets.json
