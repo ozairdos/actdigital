@@ -94,7 +94,7 @@ public sealed class BooksController(
         return Ok(ToResponse(book));
     }
 
-    [HttpPut("{id:guid}")]
+    [HttpPatch("{id:guid}")]
     [ProducesResponseType<BookResponse>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BookResponse>> Update(
         Guid id,
