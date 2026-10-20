@@ -117,6 +117,12 @@ public sealed class LoanService(
 
             await InvalidateAvailabilityAsync(request.BookId);
             LoanMetrics.RecordCreated();
+            logger.LogInformation(
+                "Loan created {LoanId} for book {BookId} and reader {ReaderId}; correlation {CorrelationId}",
+                loan.Id,
+                loan.BookId,
+                loan.ReaderId,
+                httpContext.TraceIdentifier);
             return new LoanCreationResult(ToResponse(loan), false);
         }
         finally
