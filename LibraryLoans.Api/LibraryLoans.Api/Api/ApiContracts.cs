@@ -3,16 +3,16 @@ using System.ComponentModel.DataAnnotations;
 namespace LibraryLoans.Api.Api;
 
 public sealed record CreateBookRequest(
-    [property: Required, StringLength(300, MinimumLength = 1)] string Title,
-    [property: Required, StringLength(20, MinimumLength = 10)] string Isbn,
-    [property: Required, StringLength(200, MinimumLength = 1)] string Author,
-    [property: Range(0, int.MaxValue)] int TotalCopies);
+    [param: Required, StringLength(300, MinimumLength = 1)] string Title,
+    [param: Required, StringLength(20, MinimumLength = 10)] string Isbn,
+    [param: Required, StringLength(200, MinimumLength = 1)] string Author,
+    [param: Range(0, int.MaxValue)] int TotalCopies);
 
 public sealed record UpdateBookRequest(
-    [property: StringLength(300, MinimumLength = 1)] string? Title,
-    [property: StringLength(20, MinimumLength = 10)] string? Isbn,
-    [property: StringLength(200, MinimumLength = 1)] string? Author,
-    [property: Range(0, int.MaxValue)] int? TotalCopies);
+    [param: StringLength(300, MinimumLength = 1)] string? Title,
+    [param: StringLength(20, MinimumLength = 10)] string? Isbn,
+    [param: StringLength(200, MinimumLength = 1)] string? Author,
+    [param: Range(0, int.MaxValue)] int? TotalCopies);
 
 public sealed record BookResponse(
     Guid Id,
@@ -24,7 +24,7 @@ public sealed record BookResponse(
     bool IsActive);
 
 public sealed record CreateReaderRequest(
-    [property: Required, StringLength(200, MinimumLength = 1)] string Name);
+    [param: Required, StringLength(200, MinimumLength = 1)] string Name);
 
 public sealed record ReaderResponse(Guid Id, string Name, DateTime CreatedAtUtc);
 

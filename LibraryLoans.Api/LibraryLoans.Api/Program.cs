@@ -36,14 +36,19 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
     openTelemetry.UseOtlpExporter();
 }
 
-var connectionString = builder.Configuration.GetConnectionString("Postgres")
-    ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.");
-var redisConnectionString = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
-
-builder.Services.AddDbContext<LibraryDbContext>(options => options.UseNpgsql(connectionString));
-builder.Services.AddStackExchangeRedisCache(options => options.Configuration = redisConnectionString);
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(redisConnectionString + ",abortConnect=false,connectRetry=1,connectTimeout=3000"));
+builder.Services.AddDbContext<LibraryDbContext>((serviceProvider, options) =>
+{
+    var connectionString = serviceProvider.GetRequiredService<IConfiguration>().GetConnectionString("Postgres")
+        ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.");
+    options.UseNpgsql(connectionString);
+});
+builder.Services.AddStackExchangeRedisCache(options =>
+    options.Configuration = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379");
+builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+{
+    var redisConnectionString = serviceProvider.GetRequiredService<IConfiguration>()["Redis:ConnectionString"] ?? "localhost:6379";
+    return ConnectionMultiplexer.Connect(redisConnectionString + ",abortConnect=false,connectRetry=1,connectTimeout=3000");
+});
 
 var app = builder.Build();
 
