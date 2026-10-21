@@ -13,7 +13,12 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next)
         }
 
         context.TraceIdentifier = correlationId;
-        context.Response.Headers[HeaderName] = correlationId;
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers[HeaderName] = correlationId;
+            return Task.CompletedTask;
+        });
+
         await next(context);
     }
 }

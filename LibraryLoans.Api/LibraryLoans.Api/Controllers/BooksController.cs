@@ -31,9 +31,9 @@ public sealed class BooksController(
         var book = new Book
         {
             Id = Guid.NewGuid(),
-            Title = request.Title.Trim(),
+            Title = NormalizeRequiredText(request.Title, "Title"),
             Isbn = isbn,
-            Author = request.Author.Trim(),
+            Author = NormalizeRequiredText(request.Author, "Author"),
             TotalCopies = request.TotalCopies,
             AvailableCopies = request.TotalCopies,
             CreatedAtUtc = DateTime.UtcNow,
@@ -60,7 +60,12 @@ public sealed class BooksController(
             throw new ApiProblemException(409, "ISBN already exists", "A book with this ISBN is already registered.");
         }
 
-        await InvalidateCatalogAsync();
+        await InvalidateCatalogAsync(cancellationToken);
+        logger.LogInformation(
+            "Book created {BookId} with ISBN {Isbn}; correlation {CorrelationId}",
+            book.Id,
+            book.Isbn,
+            HttpContext.TraceIdentifier);
         return CreatedAtAction(nameof(GetById), new { id = book.Id }, ToResponse(book));
     }
 
@@ -111,16 +116,23 @@ public sealed class BooksController(
         var newIsbn = request.Isbn is null ? book.Isbn : NormalizeIsbn(request.Isbn);
         ValidateIsbn(newIsbn);
         var newTotalCopies = request.TotalCopies ?? book.TotalCopies;
-        var borrowedCopies = book.TotalCopies - book.AvailableCopies;
-        if (newTotalCopies < borrowedCopies)
+        int newAvailableCopies;
+        try
         {
-            throw new ApiProblemException(409, "Invalid copy count", "TotalCopies cannot be lower than the number of borrowed copies.");
+            newAvailableCopies = BookInventoryRules.CalculateAvailableCopies(
+                book.TotalCopies,
+                book.AvailableCopies,
+                newTotalCopies);
+        }
+        catch (BookInventoryConflictException exception)
+        {
+            throw new ApiProblemException(409, "Invalid copy count", exception.Message);
         }
 
-        book.Title = request.Title?.Trim() ?? book.Title;
+        book.Title = request.Title is null ? book.Title : NormalizeRequiredText(request.Title, "Title");
         book.Isbn = newIsbn;
-        book.Author = request.Author?.Trim() ?? book.Author;
-        book.AvailableCopies += newTotalCopies - book.TotalCopies;
+        book.Author = request.Author is null ? book.Author : NormalizeRequiredText(request.Author, "Author");
+        book.AvailableCopies = newAvailableCopies;
         book.TotalCopies = newTotalCopies;
         book.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -140,7 +152,12 @@ public sealed class BooksController(
             throw new ApiProblemException(409, "ISBN already exists", "A book with this ISBN is already registered.");
         }
 
-        await InvalidateBookCacheAsync(id);
+        await InvalidateBookCacheAsync(id, cancellationToken);
+        logger.LogInformation(
+            "Book updated {BookId} with ISBN {Isbn}; correlation {CorrelationId}",
+            book.Id,
+            book.Isbn,
+            HttpContext.TraceIdentifier);
         return Ok(ToResponse(book));
     }
 
@@ -154,7 +171,8 @@ public sealed class BooksController(
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new ApiProblemException(404, "Book not found", "No book exists with the supplied id.");
 
-        if (book.IsActive)
+        var wasActive = book.IsActive;
+        if (wasActive)
         {
             book.IsActive = false;
             book.UpdatedAtUtc = DateTime.UtcNow;
@@ -163,7 +181,12 @@ public sealed class BooksController(
         }
 
         await transaction.CommitAsync(cancellationToken);
-        await InvalidateBookCacheAsync(id);
+        await InvalidateBookCacheAsync(id, cancellationToken);
+        if (wasActive)
+        {
+            logger.LogInformation("Book deactivated {BookId}; correlation {CorrelationId}", id, HttpContext.TraceIdentifier);
+        }
+
         return NoContent();
     }
 
@@ -247,11 +270,11 @@ public sealed class BooksController(
         }
     }
 
-    private async Task InvalidateCatalogAsync()
+    private async Task InvalidateCatalogAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await cache.RemoveAsync("books:catalog");
+            await cache.RemoveAsync("books:catalog", cancellationToken);
         }
         catch (RedisException exception)
         {
@@ -259,12 +282,12 @@ public sealed class BooksController(
         }
     }
 
-    private async Task InvalidateBookCacheAsync(Guid id)
+    private async Task InvalidateBookCacheAsync(Guid id, CancellationToken cancellationToken)
     {
         try
         {
-            await cache.RemoveAsync("books:catalog");
-            await cache.RemoveAsync($"books:{id}:availability");
+            await cache.RemoveAsync("books:catalog", cancellationToken);
+            await cache.RemoveAsync($"books:{id}:availability", cancellationToken);
         }
         catch (RedisException exception)
         {
@@ -276,6 +299,17 @@ public sealed class BooksController(
         book.Id, book.Title, book.Isbn, book.Author, book.TotalCopies, book.AvailableCopies, book.IsActive);
 
     private static string NormalizeIsbn(string isbn) => isbn.Trim().Replace("-", "", StringComparison.Ordinal).Replace(" ", "", StringComparison.Ordinal).ToUpperInvariant();
+
+    private static string NormalizeRequiredText(string value, string fieldName)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length == 0)
+        {
+            throw new ApiProblemException(400, "Invalid book", $"{fieldName} cannot be blank.");
+        }
+
+        return normalized;
+    }
 
     private static void ValidateIsbn(string isbn)
     {

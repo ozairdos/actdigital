@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using LibraryLoans.Api.Api;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +28,7 @@ public sealed class LoanWorkflowFixture : IAsyncLifetime
 
     private WebApplicationFactory<Program> factory = null!;
     public HttpClient Client { get; private set; } = null!;
+    public IServiceProvider Services => factory.Services;
 
     public async Task InitializeAsync()
     {
@@ -65,10 +67,12 @@ public sealed class LoanWorkflowFixture : IAsyncLifetime
 
 public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
 {
+    private readonly LoanWorkflowFixture fixture;
     private readonly HttpClient client;
 
     public LoanWorkflowTests(LoanWorkflowFixture fixture)
     {
+        this.fixture = fixture;
         client = fixture.Client;
     }
 
@@ -110,6 +114,25 @@ public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
     }
 
     [Fact]
+    public async Task Development_seed_is_idempotent()
+    {
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<LibraryLoans.Api.Infrastructure.LibraryDbContext>();
+        var booksBefore = await dbContext.Books.CountAsync();
+        var readersBefore = await dbContext.Readers.CountAsync();
+        var loansBefore = await dbContext.Loans.CountAsync();
+        var auditEventsBefore = await dbContext.AuditEvents.CountAsync();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DevelopmentDataSeeder");
+
+        await DevelopmentDataSeeder.SeedAsync(fixture.Services, logger);
+
+        Assert.Equal(booksBefore, await dbContext.Books.CountAsync());
+        Assert.Equal(readersBefore, await dbContext.Readers.CountAsync());
+        Assert.Equal(loansBefore, await dbContext.Loans.CountAsync());
+        Assert.Equal(auditEventsBefore, await dbContext.AuditEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Collection_gets_include_demo_users_and_loan_statuses()
     {
         var users = await client.GetFromJsonAsync<ReaderResponse[]>("/users");
@@ -120,6 +143,125 @@ public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
         Assert.Contains(loans!, loan => loan.Status == "Active");
         Assert.Contains(loans!, loan => loan.Status == "Returned");
         Assert.Contains(loans!, loan => loan.Status == "Canceled");
+    }
+
+    [Fact]
+    public async Task Book_and_loan_mutations_invalidate_cache_and_write_audit_events()
+    {
+        _ = await client.GetFromJsonAsync<BookResponse[]>("/books");
+        var book = await CreateBookAsync(2);
+        var booksAfterCreate = await client.GetFromJsonAsync<BookResponse[]>("/books");
+        Assert.Contains(booksAfterCreate!, item => item.Id == book.Id);
+
+        var reader = await CreateReaderAsync();
+        var availability = await client.GetFromJsonAsync<AvailabilityResponse>($"/books/{book.Id}/availability");
+        Assert.Equal(2, availability!.AvailableCopies);
+
+        var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
+        var returnedLoan = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, CreateKey("audit-return"));
+        availability = await client.GetFromJsonAsync<AvailabilityResponse>($"/books/{book.Id}/availability");
+        Assert.Equal(1, availability!.AvailableCopies);
+        var catalogAfterLoan = await client.GetFromJsonAsync<BookResponse[]>("/books");
+        Assert.Equal(1, Assert.Single(catalogAfterLoan!, item => item.Id == book.Id).AvailableCopies);
+
+        var returned = await client.PostAsync($"/loans/{returnedLoan.Id}/return", content: null);
+        Assert.Equal(HttpStatusCode.OK, returned.StatusCode);
+        availability = await client.GetFromJsonAsync<AvailabilityResponse>($"/books/{book.Id}/availability");
+        Assert.Equal(2, availability!.AvailableCopies);
+        var catalogAfterReturn = await client.GetFromJsonAsync<BookResponse[]>("/books");
+        Assert.Equal(2, Assert.Single(catalogAfterReturn!, item => item.Id == book.Id).AvailableCopies);
+
+        var canceledLoan = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, CreateKey("audit-cancel"));
+        var canceled = await client.PostAsync($"/loans/{canceledLoan.Id}/cancel", content: null);
+        Assert.Equal(HttpStatusCode.OK, canceled.StatusCode);
+
+        _ = await client.GetFromJsonAsync<AvailabilityResponse>($"/books/{book.Id}/availability");
+        var updated = await client.PatchAsJsonAsync(
+            $"/books/{book.Id}",
+            new UpdateBookRequest("Título atualizado para auditoria", null, null, 3));
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+        availability = await client.GetFromJsonAsync<AvailabilityResponse>($"/books/{book.Id}/availability");
+        Assert.Equal(3, availability!.AvailableCopies);
+        var bookEvents = await client.GetFromJsonAsync<AuditEventResponse[]>(
+            $"/audit-events?entityName=Book&entityId={book.Id}");
+        Assert.Contains(bookEvents!, item => item.Action == "BookCreated");
+        Assert.Contains(bookEvents!, item => item.Action == "BookUpdated");
+        Assert.All(bookEvents!, item =>
+        {
+            Assert.Equal("api", item.Actor);
+            Assert.False(string.IsNullOrWhiteSpace(item.CorrelationId));
+            Assert.Equal(DateTimeKind.Utc, item.TimestampUtc.Kind);
+        });
+
+        var returnedEvents = await client.GetFromJsonAsync<AuditEventResponse[]>(
+            $"/audit-events?entityName=Loan&entityId={returnedLoan.Id}");
+        var canceledEvents = await client.GetFromJsonAsync<AuditEventResponse[]>(
+            $"/audit-events?entityName=Loan&entityId={canceledLoan.Id}");
+        Assert.Contains(returnedEvents!, item => item.Action == "LoanReturned");
+        Assert.Contains(canceledEvents!, item => item.Action == "LoanCanceled");
+
+        var deactivated = await client.DeleteAsync($"/books/{book.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deactivated.StatusCode);
+        var availabilityAfterDeactivate = await client.GetAsync($"/books/{book.Id}/availability");
+        Assert.Equal(HttpStatusCode.NotFound, availabilityAfterDeactivate.StatusCode);
+        var finalBookEvents = await client.GetFromJsonAsync<AuditEventResponse[]>(
+            $"/audit-events?entityName=Book&entityId={book.Id}");
+        Assert.Contains(finalBookEvents!, item => item.Action == "BookDeactivated");
+
+        var deactivatedBook = await client.GetFromJsonAsync<BookResponse>($"/books/{book.Id}");
+        var historyAfterDeactivate = await client.GetFromJsonAsync<LoanResponse[]>($"/books/{book.Id}/history");
+        var catalogAfterDeactivate = await client.GetFromJsonAsync<BookResponse[]>("/books");
+        Assert.False(deactivatedBook!.IsActive);
+        Assert.Equal(2, historyAfterDeactivate!.Length);
+        Assert.DoesNotContain(catalogAfterDeactivate!, item => item.Id == book.Id);
+    }
+
+    [Fact]
+    public async Task Duplicate_isbn_is_rejected()
+    {
+        var first = await CreateBookAsync(1);
+        var duplicate = await client.PostAsJsonAsync("/books", new CreateBookRequest(
+            "Duplicate ISBN test",
+            first.Isbn,
+            "Test author",
+            1));
+
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+    }
+
+    [Fact]
+    public async Task Blank_book_title_and_reader_name_are_rejected()
+    {
+        var blankBook = await client.PostAsJsonAsync("/books", new CreateBookRequest(
+            "   ",
+            CreateIsbn(),
+            "Test author",
+            1));
+        var blankReader = await client.PostAsJsonAsync("/users", new CreateReaderRequest("   "));
+
+        Assert.Equal(HttpStatusCode.BadRequest, blankBook.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, blankReader.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_checks_and_problem_responses_include_expected_status_and_correlation()
+    {
+        var live = await client.GetAsync("/health/live");
+        var ready = await client.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+
+        const string correlationId = "manual-correlation-check";
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/users?limit=0");
+        request.Headers.Add("X-Correlation-ID", correlationId);
+        var invalidLimit = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, invalidLimit.StatusCode);
+        Assert.Equal(correlationId, Assert.Single(invalidLimit.Headers.GetValues("X-Correlation-ID")));
+        Assert.StartsWith("application/problem+json", invalidLimit.Content.Headers.ContentType!.MediaType);
+        using var problem = JsonDocument.Parse(await invalidLimit.Content.ReadAsStringAsync());
+        Assert.Equal(400, problem.RootElement.GetProperty("status").GetInt32());
     }
 
     [Fact]

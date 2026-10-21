@@ -44,7 +44,7 @@ public sealed class LoanService(
                 .SingleOrDefaultAsync(record => record.Key == idempotencyKey, cancellationToken);
             if (existing is not null)
             {
-                return await ReplayAsync(existing, fingerprint, cancellationToken);
+                return await ReplayAsync(existing, fingerprint, httpContext.TraceIdentifier, cancellationToken);
             }
 
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -66,7 +66,7 @@ public sealed class LoanService(
                 if (concurrentReplay is not null)
                 {
                     await transaction.RollbackAsync(cancellationToken);
-                    return await ReplayAsync(concurrentReplay, fingerprint, cancellationToken);
+                    return await ReplayAsync(concurrentReplay, fingerprint, httpContext.TraceIdentifier, cancellationToken);
                 }
 
                 var bookExists = await dbContext.Books.AnyAsync(book => book.Id == request.BookId && book.IsActive, cancellationToken);
@@ -76,6 +76,11 @@ public sealed class LoanService(
                 }
 
                 LoanMetrics.RecordUnavailable();
+                logger.LogWarning(
+                    "Loan rejected because book {BookId} is unavailable for reader {ReaderId}; correlation {CorrelationId}",
+                    request.BookId,
+                    request.ReaderId,
+                    httpContext.TraceIdentifier);
                 throw new ApiProblemException(409, "Book unavailable", "No copies of this book are currently available.");
             }
 
@@ -120,10 +125,10 @@ public sealed class LoanService(
                     throw;
                 }
 
-                return await ReplayAsync(winner, fingerprint, cancellationToken);
+                return await ReplayAsync(winner, fingerprint, httpContext.TraceIdentifier, cancellationToken);
             }
 
-            await InvalidateAvailabilityAsync(request.BookId);
+            await InvalidateAvailabilityAsync(request.BookId, cancellationToken);
             LoanMetrics.RecordCreated();
             logger.LogInformation(
                 "Loan created {LoanId} for book {BookId} and reader {ReaderId}; correlation {CorrelationId}",
@@ -193,13 +198,21 @@ public sealed class LoanService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await InvalidateAvailabilityAsync(loan.BookId);
+        await InvalidateAvailabilityAsync(loan.BookId, cancellationToken);
+        logger.LogInformation(
+            "Loan {Action} {LoanId} for book {BookId} and reader {ReaderId}; correlation {CorrelationId}",
+            action,
+            loan.Id,
+            loan.BookId,
+            loan.ReaderId,
+            context.TraceIdentifier);
         return ToResponse(loan);
     }
 
     private async Task<LoanCreationResult> ReplayAsync(
         IdempotencyRecord record,
         string requestFingerprint,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         if (!CryptographicOperations.FixedTimeEquals(
@@ -211,15 +224,16 @@ public sealed class LoanService(
         var loan = await dbContext.Loans.AsNoTracking().SingleOrDefaultAsync(loan => loan.Id == record.LoanId, cancellationToken)
             ?? throw new InvalidOperationException("The idempotency record references a missing loan.");
         LoanMetrics.RecordReplay();
+        logger.LogInformation("Idempotent loan request replayed {LoanId}; correlation {CorrelationId}", loan.Id, correlationId);
         return new LoanCreationResult(ToResponse(loan), true);
     }
 
-    private async Task InvalidateAvailabilityAsync(Guid bookId)
+    private async Task InvalidateAvailabilityAsync(Guid bookId, CancellationToken cancellationToken)
     {
         try
         {
-            await cache.RemoveAsync("books:catalog");
-            await cache.RemoveAsync($"books:{bookId}:availability");
+            await cache.RemoveAsync("books:catalog", cancellationToken);
+            await cache.RemoveAsync($"books:{bookId}:availability", cancellationToken);
         }
         catch (RedisException exception)
         {

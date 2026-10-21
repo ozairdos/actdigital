@@ -57,8 +57,8 @@ if (app.Environment.IsDevelopment())
     await DevelopmentDataSeeder.SeedAsync(app.Services, app.Logger);
 }
 
-app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {

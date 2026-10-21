@@ -8,7 +8,7 @@ namespace LibraryLoans.Api.Controllers;
 
 [ApiController]
 [Route("users")]
-public sealed class ReadersController(LibraryDbContext dbContext) : ControllerBase
+public sealed class ReadersController(LibraryDbContext dbContext, ILogger<ReadersController> logger) : ControllerBase
 {
     [HttpPost]
     [ProducesResponseType<ReaderResponse>(StatusCodes.Status201Created)]
@@ -16,15 +16,22 @@ public sealed class ReadersController(LibraryDbContext dbContext) : ControllerBa
         CreateReaderRequest request,
         CancellationToken cancellationToken)
     {
+        var name = request.Name.Trim();
+        if (name.Length == 0)
+        {
+            throw new ApiProblemException(400, "Invalid reader", "Name cannot be blank.");
+        }
+
         var reader = new Reader
         {
             Id = Guid.NewGuid(),
-            Name = request.Name.Trim(),
+            Name = name,
             CreatedAtUtc = DateTime.UtcNow
         };
 
         dbContext.Readers.Add(reader);
         await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Reader created {ReaderId}; correlation {CorrelationId}", reader.Id, HttpContext.TraceIdentifier);
         var response = new ReaderResponse(reader.Id, reader.Name, reader.CreatedAtUtc);
         return Created($"/users/{reader.Id}", response);
     }
