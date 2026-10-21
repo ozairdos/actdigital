@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using LibraryLoans.Api.Infrastructure;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 using Xunit;
@@ -69,6 +70,16 @@ public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
     public LoanWorkflowTests(LoanWorkflowFixture fixture)
     {
         client = fixture.Client;
+    }
+
+    [Fact]
+    public async Task Development_seed_exposes_demo_book_and_reader()
+    {
+        var book = await client.GetFromJsonAsync<BookResponse>($"/books/{DevelopmentDataSeeder.DemoBookId}");
+        var reader = await client.GetFromJsonAsync<ReaderResponse>($"/users/{DevelopmentDataSeeder.DemoReaderId}");
+
+        Assert.Equal("9780000000009", book!.Isbn);
+        Assert.Equal("Leitor de demonstração 1", reader!.Name);
     }
 
     [Fact]

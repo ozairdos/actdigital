@@ -22,11 +22,26 @@ Remove-Item Env:ConnectionStrings__Postgres
 docker compose up --build api
 ```
 
-A API fica em `http://localhost:8080`. Para abrir o documento OpenAPI no ambiente de desenvolvimento, execute a API com `ASPNETCORE_ENVIRONMENT=Development`; o endpoint é `/openapi/v1.json`.
+A API fica em `http://localhost:8080`. No perfil `Development`, o Swagger UI fica em `/swagger` e o documento OpenAPI em `/openapi/v1.json`.
 
 O Compose usa `local-development-only` apenas como senha descartável de desenvolvimento. Sobrescreva `POSTGRES_PASSWORD` no ambiente local se necessário. Não use esses valores em ambientes compartilhados ou produção. A aplicação recebe `ConnectionStrings__Postgres`, `Redis__ConnectionString` e, opcionalmente, `OTEL_EXPORTER_OTLP_ENDPOINT` por configuração/ambiente; não há credenciais reais versionadas.
 
 Para encerrar os serviços sem apagar os dados: `docker compose down`. O comando `docker compose down -v` também remove o volume local do PostgreSQL.
+
+## Dados de demonstração
+
+Ao iniciar em `Development`, a aplicação aplica migrations pendentes e cria dados de demonstração de forma idempotente. Os registros não são removidos nem sobrescritos. A carga não roda em `Production`.
+
+| Registro | ID | Informação útil |
+| --- | --- | --- |
+| Livro com empréstimo ativo | `d8a65cb2-c871-4a9f-b5e2-6f713d35b001` | ISBN `9780000000009`, 5 exemplares totais |
+| Livro com histórico devolvido | `d8a65cb2-c871-4a9f-b5e2-6f713d35b002` | ISBN `9780000000018` |
+| Livro com último exemplar livre | `d8a65cb2-c871-4a9f-b5e2-6f713d35b003` | ISBN `9780000000027`, 1 exemplar |
+| Leitor de demonstração 1 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c001` | Tem um empréstimo ativo |
+| Leitor de demonstração 2 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c002` | Tem um empréstimo devolvido no histórico |
+| Leitor de demonstração 3 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c003` | Sem empréstimos |
+
+Use `GET /books`, `GET /books/{id}/history`, `GET /users/{id}/loans` e `GET /books/{id}/availability` no Swagger para explorar os dados. O seed adiciona também dois eventos de histórico para o empréstimo devolvido e um empréstimo ativo para experimentar devolução e cancelamento.
 
 ## Migrations e testes
 

@@ -52,6 +52,11 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    await DevelopmentDataSeeder.SeedAsync(app.Services, app.Logger);
+}
+
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
 
