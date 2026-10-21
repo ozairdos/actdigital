@@ -29,6 +29,25 @@ public sealed class ReadersController(LibraryDbContext dbContext) : ControllerBa
         return Created($"/users/{reader.Id}", response);
     }
 
+    [HttpGet]
+    public async Task<ActionResult<ReaderResponse[]>> GetAll(
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 500)
+        {
+            throw new ApiProblemException(400, "Invalid limit", "Limit must be between 1 and 500.");
+        }
+
+        var readers = await dbContext.Readers.AsNoTracking()
+            .OrderBy(reader => reader.Name)
+            .Take(limit)
+            .Select(reader => new ReaderResponse(reader.Id, reader.Name, reader.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(readers);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ReaderResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {

@@ -110,6 +110,19 @@ public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
     }
 
     [Fact]
+    public async Task Collection_gets_include_demo_users_and_loan_statuses()
+    {
+        var users = await client.GetFromJsonAsync<ReaderResponse[]>("/users");
+        var loans = await client.GetFromJsonAsync<LoanResponse[]>("/loans");
+
+        Assert.Contains(users!, reader => reader.Id == DevelopmentDataSeeder.DemoReaderId);
+        Assert.Contains(users!, reader => reader.Id == DevelopmentDataSeeder.DemoReaderFourId);
+        Assert.Contains(loans!, loan => loan.Status == "Active");
+        Assert.Contains(loans!, loan => loan.Status == "Returned");
+        Assert.Contains(loans!, loan => loan.Status == "Canceled");
+    }
+
+    [Fact]
     public async Task Concurrent_requests_for_last_copy_create_exactly_one_loan()
     {
         var book = await CreateBookAsync(1);

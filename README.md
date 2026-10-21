@@ -45,7 +45,7 @@ Ao iniciar em `Development`, a aplicação aplica migrations pendentes e cria da
 | Leitor de demonstração 3 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c003` | Tem o empréstimo que esgotou o último exemplar |
 | Leitor de demonstração 4 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c004` | Tem um empréstimo cancelado no histórico |
 
-Use `GET /books`, `GET /books/{id}/history`, `GET /users/{id}/loans` e `GET /books/{id}/availability` no Swagger para explorar os dados. A carga cobre empréstimos ativos, devolvidos e cancelados, além de estoque livre, indisponível e zerado.
+Use `GET /books`, `GET /users`, `GET /users/{id}/loans`, `GET /loans`, `GET /books/{id}/history` e `GET /books/{id}/availability` no Swagger para explorar os dados. `GET /users` e `GET /loans` aceitam `?limit=100` (máximo 500) e retornam resultados ordenados. A carga cobre empréstimos ativos, devolvidos e cancelados, além de estoque livre, indisponível e zerado.
 
 ## Migrations e testes
 
