@@ -10,6 +10,10 @@ public static class DevelopmentDataSeeder
 {
     public static readonly Guid DemoBookId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b001");
     public static readonly Guid DemoReaderId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35c001");
+    public static readonly Guid DemoReaderFourId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35c004");
+    public static readonly Guid DemoUnavailableBookId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b004");
+    public static readonly Guid DemoNoStockBookId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b005");
+    public static readonly Guid DemoCanceledBookId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b006");
 
     private static readonly Guid DemoBookTwoId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b002");
     private static readonly Guid DemoBookThreeId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35b003");
@@ -17,6 +21,8 @@ public static class DevelopmentDataSeeder
     private static readonly Guid DemoReaderThreeId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35c003");
     private static readonly Guid ActiveLoanId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35d001");
     private static readonly Guid ReturnedLoanId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35d002");
+    private static readonly Guid UnavailableLoanId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35d003");
+    private static readonly Guid CanceledLoanId = Guid.Parse("d8a65cb2-c871-4a9f-b5e2-6f713d35d004");
 
     public static async Task SeedAsync(IServiceProvider services, ILogger logger, CancellationToken cancellationToken = default)
     {
@@ -62,6 +68,39 @@ public static class DevelopmentDataSeeder
                 AvailableCopies = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now
+            },
+            new Book
+            {
+                Id = DemoUnavailableBookId,
+                Title = "Livro de demonstração: indisponível por empréstimo ativo",
+                Isbn = "9780000000034",
+                Author = "Autora de demonstração",
+                TotalCopies = 1,
+                AvailableCopies = 1,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            },
+            new Book
+            {
+                Id = DemoNoStockBookId,
+                Title = "Livro de demonstração: sem exemplares cadastrados",
+                Isbn = "9780000000041",
+                Author = "Autor de demonstração",
+                TotalCopies = 0,
+                AvailableCopies = 0,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            },
+            new Book
+            {
+                Id = DemoCanceledBookId,
+                Title = "Livro de demonstração: empréstimo cancelado",
+                Isbn = "9780000000058",
+                Author = "Autora de demonstração",
+                TotalCopies = 2,
+                AvailableCopies = 2,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
             }
         };
 
@@ -81,7 +120,8 @@ public static class DevelopmentDataSeeder
         {
             new Reader { Id = DemoReaderId, Name = "Leitor de demonstração 1", CreatedAtUtc = now },
             new Reader { Id = DemoReaderTwoId, Name = "Leitor de demonstração 2", CreatedAtUtc = now },
-            new Reader { Id = DemoReaderThreeId, Name = "Leitor de demonstração 3", CreatedAtUtc = now }
+            new Reader { Id = DemoReaderThreeId, Name = "Leitor de demonstração 3", CreatedAtUtc = now },
+            new Reader { Id = DemoReaderFourId, Name = "Leitor de demonstração 4", CreatedAtUtc = now }
         };
 
         foreach (var reader in readers)
@@ -140,6 +180,49 @@ public static class DevelopmentDataSeeder
             changed = true;
         }
 
+        var unavailableBook = await dbContext.Books.SingleOrDefaultAsync(book => book.Id == DemoUnavailableBookId, cancellationToken);
+        var unavailableReader = await dbContext.Readers.SingleOrDefaultAsync(reader => reader.Id == DemoReaderThreeId, cancellationToken);
+        if (unavailableBook is not null && unavailableReader is not null
+            && !await dbContext.Loans.AnyAsync(loan => loan.Id == UnavailableLoanId, cancellationToken)
+            && unavailableBook.AvailableCopies > 0)
+        {
+            unavailableBook.AvailableCopies--;
+            unavailableBook.UpdatedAtUtc = now;
+            var loan = new Loan
+            {
+                Id = UnavailableLoanId,
+                BookId = unavailableBook.Id,
+                ReaderId = unavailableReader.Id,
+                BorrowedAtUtc = now.AddDays(-1),
+                DueAtUtc = now.AddDays(13),
+                Status = LoanStatus.Active
+            };
+            dbContext.Loans.Add(loan);
+            AddAudit(dbContext, loan.Id, "LoanCreated", new { loan.BookId, loan.ReaderId, loan.BorrowedAtUtc, loan.DueAtUtc });
+            changed = true;
+        }
+
+        var canceledBook = await dbContext.Books.SingleOrDefaultAsync(book => book.Id == DemoCanceledBookId, cancellationToken);
+        var canceledReader = await dbContext.Readers.SingleOrDefaultAsync(reader => reader.Id == DemoReaderFourId, cancellationToken);
+        if (canceledBook is not null && canceledReader is not null
+            && !await dbContext.Loans.AnyAsync(loan => loan.Id == CanceledLoanId, cancellationToken))
+        {
+            var loan = new Loan
+            {
+                Id = CanceledLoanId,
+                BookId = canceledBook.Id,
+                ReaderId = canceledReader.Id,
+                BorrowedAtUtc = now.AddDays(-10),
+                DueAtUtc = now.AddDays(4),
+                CanceledAtUtc = now.AddDays(-8),
+                Status = LoanStatus.Canceled
+            };
+            dbContext.Loans.Add(loan);
+            AddAudit(dbContext, loan.Id, "LoanCreated", new { loan.BookId, loan.ReaderId, loan.BorrowedAtUtc, loan.DueAtUtc });
+            AddAudit(dbContext, loan.Id, "LoanCanceled", new { loan.BookId, loan.ReaderId, TimestampUtc = loan.CanceledAtUtc });
+            changed = true;
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -176,6 +259,9 @@ public static class DevelopmentDataSeeder
             await cache.RemoveAsync($"books:{DemoBookId}:availability", cancellationToken);
             await cache.RemoveAsync($"books:{DemoBookTwoId}:availability", cancellationToken);
             await cache.RemoveAsync($"books:{DemoBookThreeId}:availability", cancellationToken);
+            await cache.RemoveAsync($"books:{DemoUnavailableBookId}:availability", cancellationToken);
+            await cache.RemoveAsync($"books:{DemoNoStockBookId}:availability", cancellationToken);
+            await cache.RemoveAsync($"books:{DemoCanceledBookId}:availability", cancellationToken);
         }
         catch (RedisException exception)
         {

@@ -83,6 +83,33 @@ public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
     }
 
     [Fact]
+    public async Task Development_seed_covers_cancelled_and_unavailable_scenarios()
+    {
+        var unavailable = await client.GetFromJsonAsync<AvailabilityResponse>(
+            $"/books/{DevelopmentDataSeeder.DemoUnavailableBookId}/availability");
+        var noStock = await client.GetFromJsonAsync<AvailabilityResponse>(
+            $"/books/{DevelopmentDataSeeder.DemoNoStockBookId}/availability");
+        var canceledHistory = await client.GetFromJsonAsync<LoanResponse[]>(
+            $"/books/{DevelopmentDataSeeder.DemoCanceledBookId}/history");
+        var readerLoans = await client.GetFromJsonAsync<LoanResponse[]>(
+            $"/users/{DevelopmentDataSeeder.DemoReaderFourId}/loans");
+
+        Assert.Equal(0, unavailable!.AvailableCopies);
+        Assert.Equal(0, noStock!.AvailableCopies);
+        Assert.Contains(canceledHistory!, loan => loan.Status == "Canceled");
+        Assert.Contains(readerLoans!, loan => loan.Status == "Canceled");
+
+        var request = CreateLoanRequest(
+            DevelopmentDataSeeder.DemoUnavailableBookId,
+            DevelopmentDataSeeder.DemoReaderId,
+            DateTimeOffset.UtcNow.AddDays(14),
+            CreateKey("unavailable-demo"));
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Concurrent_requests_for_last_copy_create_exactly_one_loan()
     {
         var book = await CreateBookAsync(1);

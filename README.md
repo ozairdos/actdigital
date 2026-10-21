@@ -34,14 +34,18 @@ Ao iniciar em `Development`, a aplicação aplica migrations pendentes e cria da
 
 | Registro | ID | Informação útil |
 | --- | --- | --- |
-| Livro com empréstimo ativo | `d8a65cb2-c871-4a9f-b5e2-6f713d35b001` | ISBN `9780000000009`, 5 exemplares totais |
+| Livro com empréstimo ativo | `d8a65cb2-c871-4a9f-b5e2-6f713d35b001` | ISBN `9780000000009`, 4 de 5 exemplares disponíveis |
 | Livro com histórico devolvido | `d8a65cb2-c871-4a9f-b5e2-6f713d35b002` | ISBN `9780000000018` |
 | Livro com último exemplar livre | `d8a65cb2-c871-4a9f-b5e2-6f713d35b003` | ISBN `9780000000027`, 1 exemplar |
+| Livro indisponível por empréstimo ativo | `d8a65cb2-c871-4a9f-b5e2-6f713d35b004` | ISBN `9780000000034`, 0 de 1 disponível |
+| Livro sem exemplares cadastrados | `d8a65cb2-c871-4a9f-b5e2-6f713d35b005` | ISBN `9780000000041`, estoque total 0 |
+| Livro com empréstimo cancelado | `d8a65cb2-c871-4a9f-b5e2-6f713d35b006` | ISBN `9780000000058`, disponibilidade restaurada |
 | Leitor de demonstração 1 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c001` | Tem um empréstimo ativo |
 | Leitor de demonstração 2 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c002` | Tem um empréstimo devolvido no histórico |
-| Leitor de demonstração 3 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c003` | Sem empréstimos |
+| Leitor de demonstração 3 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c003` | Tem o empréstimo que esgotou o último exemplar |
+| Leitor de demonstração 4 | `d8a65cb2-c871-4a9f-b5e2-6f713d35c004` | Tem um empréstimo cancelado no histórico |
 
-Use `GET /books`, `GET /books/{id}/history`, `GET /users/{id}/loans` e `GET /books/{id}/availability` no Swagger para explorar os dados. O seed adiciona também dois eventos de histórico para o empréstimo devolvido e um empréstimo ativo para experimentar devolução e cancelamento.
+Use `GET /books`, `GET /books/{id}/history`, `GET /users/{id}/loans` e `GET /books/{id}/availability` no Swagger para explorar os dados. A carga cobre empréstimos ativos, devolvidos e cancelados, além de estoque livre, indisponível e zerado.
 
 ## Migrations e testes
 
