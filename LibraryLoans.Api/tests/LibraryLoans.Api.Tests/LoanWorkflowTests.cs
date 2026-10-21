@@ -6,13 +6,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 using Xunit;
 
 namespace LibraryLoans.Api.Tests;
 
-public sealed class LoanWorkflowTests : IAsyncLifetime
+public sealed class LoanWorkflowFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer postgres = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("library_loans_tests")
@@ -24,7 +25,7 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         .Build();
 
     private WebApplicationFactory<Program> factory = null!;
-    private HttpClient client = null!;
+    public HttpClient Client { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
@@ -32,14 +33,21 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         await redis.StartAsync();
 
         factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Postgres"] = postgres.GetConnectionString(),
                     ["Redis:ConnectionString"] = $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}"
-                })));
+                }));
+            builder.ConfigureLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.SetMinimumLevel(LogLevel.Warning);
+            });
+        });
 
-        client = factory.CreateClient();
+        Client = factory.CreateClient();
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LibraryLoans.Api.Infrastructure.LibraryDbContext>();
         await dbContext.Database.MigrateAsync();
@@ -47,10 +55,20 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        client.Dispose();
+        Client.Dispose();
         await factory.DisposeAsync();
         await redis.DisposeAsync();
         await postgres.DisposeAsync();
+    }
+}
+
+public sealed class LoanWorkflowTests : IClassFixture<LoanWorkflowFixture>
+{
+    private readonly HttpClient client;
+
+    public LoanWorkflowTests(LoanWorkflowFixture fixture)
+    {
+        client = fixture.Client;
     }
 
     [Fact]
@@ -60,8 +78,8 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         var reader = await CreateReaderAsync();
         var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
 
-        var firstRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-a");
-        var secondRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-b");
+        var firstRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, CreateKey("concurrent-a"));
+        var secondRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, CreateKey("concurrent-b"));
         var responses = await Task.WhenAll(client.SendAsync(firstRequest), client.SendAsync(secondRequest));
 
         Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
@@ -80,8 +98,9 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         var book = await CreateBookAsync(1);
         var reader = await CreateReaderAsync();
         var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
-        var first = await client.SendAsync(CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "same-key"));
-        var repeated = await client.SendAsync(CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "same-key"));
+        var key = CreateKey("same-key");
+        var first = await client.SendAsync(CreateLoanRequest(book.Id, reader.Id, dueAtUtc, key));
+        var repeated = await client.SendAsync(CreateLoanRequest(book.Id, reader.Id, dueAtUtc, key));
 
         var firstLoan = await first.Content.ReadFromJsonAsync<LoanResponse>();
         var replayedLoan = await repeated.Content.ReadFromJsonAsync<LoanResponse>();
@@ -102,8 +121,9 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         var book = await CreateBookAsync(1);
         var reader = await CreateReaderAsync();
         var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
-        var firstRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-same-key");
-        var secondRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, "concurrent-same-key");
+        var key = CreateKey("concurrent-same-key");
+        var firstRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, key);
+        var secondRequest = CreateLoanRequest(book.Id, reader.Id, dueAtUtc, key);
 
         var responses = await Task.WhenAll(client.SendAsync(firstRequest), client.SendAsync(secondRequest));
         var loans = await Task.WhenAll(responses.Select(response => response.Content.ReadFromJsonAsync<LoanResponse>()));
@@ -122,8 +142,8 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         var book = await CreateBookAsync(2);
         var reader = await CreateReaderAsync();
         var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
-        var first = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, "return-key");
-        var second = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, "cancel-key");
+        var first = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, CreateKey("return-key"));
+        var second = await CreateLoanAsync(book.Id, reader.Id, dueAtUtc, CreateKey("cancel-key"));
 
         var returned = await client.PostAsync($"/loans/{first.Id}/return", content: null);
         var canceled = await client.PostAsync($"/loans/{second.Id}/cancel", content: null);
@@ -144,8 +164,9 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
         var reader = await CreateReaderAsync();
         var dueAtUtc = DateTimeOffset.UtcNow.AddDays(14);
 
-        var created = await client.SendAsync(CreateLoanRequest(firstBook.Id, reader.Id, dueAtUtc, "conflict-key"));
-        var conflict = await client.SendAsync(CreateLoanRequest(secondBook.Id, reader.Id, dueAtUtc, "conflict-key"));
+        var key = CreateKey("conflict-key");
+        var created = await client.SendAsync(CreateLoanRequest(firstBook.Id, reader.Id, dueAtUtc, key));
+        var conflict = await client.SendAsync(CreateLoanRequest(secondBook.Id, reader.Id, dueAtUtc, key));
 
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
@@ -189,5 +210,6 @@ public sealed class LoanWorkflowTests : IAsyncLifetime
 
     private static string CreateIsbn() => $"978{Random.Shared.Next(1000000000, int.MaxValue):D10}"[..13];
 
+    private static string CreateKey(string purpose) => $"{purpose}-{Guid.NewGuid():N}";
     private sealed record AvailabilityResponse(Guid BookId, int AvailableCopies);
 }
