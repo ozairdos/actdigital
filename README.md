@@ -56,22 +56,22 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add NomeDaMigration --project LibraryLoans.Api/LibraryLoans.Api.csproj
 ```
 
-As migrations existentes podem ser aplicadas ao banco local com `dotnet tool run dotnet-ef database update --project LibraryLoans.Api/LibraryLoans.Api.csproj`. Os testes de integração usam PostgreSQL e Redis reais por Testcontainers:
+As migrations existentes podem ser aplicadas ao banco local com `dotnet tool run dotnet-ef database update --project LibraryLoans.Api/LibraryLoans.Api.csproj`. A suíte inclui testes unitários das regras de estoque e testes de integração com PostgreSQL e Redis reais via Testcontainers. A integração cobre concorrência, idempotência, auditoria, invalidação de cache, seed, ISBN duplicado, health checks e respostas de erro:
 
 ```powershell
 dotnet test tests/LibraryLoans.Api.Tests/LibraryLoans.Api.Tests.csproj
 ```
 
-O Docker precisa estar em execução para os testes de integração.
+O Docker precisa estar em execução para os testes de integração. Os testes unitários podem ser executados isoladamente sem Docker com `dotnet test tests/LibraryLoans.Api.Tests/LibraryLoans.Api.Tests.csproj --filter FullyQualifiedName~BookInventoryRulesTests`.
 
 ## Decisões técnicas
 
 - **Concorrência:** o PostgreSQL é a fonte de verdade. O empréstimo decrementa `AvailableCopies` com um único `UPDATE` condicional (`AvailableCopies > 0`) dentro de uma transação, antes de inserir empréstimo, idempotência e auditoria. O banco serializa a disputa pela linha; só uma requisição consegue consumir a última unidade. A unicidade de ISBN e da `Idempotency-Key` também é garantida por índices/chaves no banco. Essa estratégia coordena réplicas sem locks em memória.
 - **Idempotência:** a chave é persistida com fingerprint SHA-256 da solicitação e o empréstimo resultante, na mesma transação. Repetição igual retorna o mesmo empréstimo; reuso da chave com conteúdo diferente retorna `409 Conflict`. A chave não expira automaticamente nesta versão.
 - **Auditoria:** eventos de livros e empréstimos são gravados na mesma transação da mudança de negócio. Sem autenticação no escopo do desafio, o ator é registrado como `api`; timestamps são UTC e o correlation ID vem de `X-Correlation-ID` (gerado quando ausente ou inválido para o tamanho aceito).
-- **Cache:** Redis armazena o catálogo e a disponibilidade por até dois minutos. Escritas invalidam as chaves afetadas; falhas de cache usam PostgreSQL como fallback. Redis nunca decide se um empréstimo pode ser criado.
+- **Cache:** Redis armazena o catálogo e a disponibilidade por até dois minutos. Escritas invalidam as chaves afetadas; falhas de cache usam PostgreSQL como fallback. Redis nunca decide se um empréstimo pode ser criado. A integração testa leitura em cache seguida de empréstimo, devolução e desativação.
 - **Cancelamento:** cancelar um empréstimo ativo encerra o registro existente e devolve a unidade ao estoque. Devolver ou cancelar outra vez retorna conflito, preservando o histórico.
-- **Observabilidade:** `/health/live` verifica somente o processo; `/health/ready` verifica PostgreSQL e Redis. Há métricas de empréstimos, indisponibilidade, repetição idempotente e duração, além de instrumentação ASP.NET Core/HTTP/runtime. O exportador OTLP é habilitado quando `OTEL_EXPORTER_OTLP_ENDPOINT` estiver configurado.
+- **Observabilidade:** `/health/live` verifica somente o processo; `/health/ready` verifica PostgreSQL e Redis. Logs estruturados de operações de negócio incluem os IDs pertinentes e `correlationId`; `X-Correlation-ID` também é devolvido em erros `ProblemDetails`. Há métricas de empréstimos, indisponibilidade, repetição idempotente e duração, além de instrumentação ASP.NET Core/HTTP/runtime. O exportador OTLP é habilitado quando `OTEL_EXPORTER_OTLP_ENDPOINT` estiver configurado.
 
 ## Kubernetes
 
