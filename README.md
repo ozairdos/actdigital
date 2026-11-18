@@ -1,6 +1,17 @@
-# actdigital: LibraryLoans.Api
+# actdigital: LibraryLoans
 
 API REST de catálogo e empréstimos para o desafio de empréstimos concorrentes e auditáveis. A aplicação usa .NET 10, PostgreSQL, EF Core/Npgsql e Redis.
+
+## Escopo do desafio e iniciativa adicional
+
+Este repositório contém a solução do desafio técnico solicitado pela **ACT Digital**. O backend em [LibraryLoans.Api](LibraryLoans.Api) implementa o catálogo e os empréstimos concorrentes e auditáveis.
+
+O projeto [LibraryLoans.Web](LibraryLoans.Web/README.md), chamado **Acervo**, foi desenvolvido por iniciativa própria como complemento para demonstrar os fluxos da API. **O frontend não foi solicitado no desafio técnico** e não é necessário para executar ou avaliar a API pelo Swagger ou por um cliente HTTP.
+
+| Projeto | Responsabilidade | Tecnologias |
+| --- | --- | --- |
+| [LibraryLoans.Api](LibraryLoans.Api) | API, regras de negócio, persistência, auditoria e testes do backend | .NET 10, EF Core/Npgsql, PostgreSQL e Redis |
+| [LibraryLoans.Web](LibraryLoans.Web/README.md) | Interface de demonstração adicional | Angular 21, TypeScript, SCSS e Vitest |
 
 ## Pré-requisitos
 
@@ -27,6 +38,32 @@ A API fica em `http://localhost:8080`. No perfil `Development`, o Swagger UI fic
 O Compose usa `local-development-only` apenas como senha descartável de desenvolvimento. Sobrescreva `POSTGRES_PASSWORD` no ambiente local se necessário. Não use esses valores em ambientes compartilhados ou produção. A aplicação recebe `ConnectionStrings__Postgres`, `Redis__ConnectionString` e, opcionalmente, `OTEL_EXPORTER_OTLP_ENDPOINT` por configuração/ambiente; não há credenciais reais versionadas.
 
 Para encerrar os serviços sem apagar os dados: `docker compose down`. O comando `docker compose down -v` também remove o volume local do PostgreSQL.
+
+## Executar API e frontend em desenvolvimento
+
+Para usar o proxy padrão do Angular, inicie a API no perfil HTTP, na porta 5257. Em um terminal, a partir da raiz do repositório:
+
+```powershell
+cd LibraryLoans.Api
+docker compose up -d postgres redis
+$env:ConnectionStrings__Postgres = "Host=localhost;Port=5432;Database=library_loans;Username=library;Password=local-development-only"
+$env:Redis__ConnectionString = "localhost:6379,abortConnect=false"
+dotnet run --project LibraryLoans.Api/LibraryLoans.Api.csproj --launch-profile http
+```
+
+O perfil HTTP usa `Development`: migrations e dados de demonstração são aplicados pela API na inicialização. Se tiver alterado a senha do PostgreSQL, ajuste a connection string. O Swagger fica em `http://localhost:5257/swagger`.
+
+Em outro terminal, a partir da raiz, com **Node.js 22.12+ da linha 22** e npm instalados:
+
+```powershell
+cd LibraryLoans.Web
+npm ci
+npm start
+```
+
+Abra `http://localhost:4200`. O proxy encaminha `/api/*` para `http://localhost:5257/*`, removendo o prefixo `/api`. Para usar a API do Compose em `http://localhost:8080`, ajuste o `target` de [proxy.conf.json](LibraryLoans.Web/proxy.conf.json) e reinicie o Angular. O Compose usa `Production` por padrão e não cria os dados de demonstração.
+
+O painel oferece visão geral, cadastro/edição/desativação de livros, cadastro de leitores e consulta de seus empréstimos, criação/devolução/cancelamento de empréstimos e consulta de auditoria. Consulte o [README do frontend](LibraryLoans.Web/README.md) para rotas, arquitetura, build, testes e limitações dos indicadores.
 
 ## Dados de demonstração
 
@@ -86,3 +123,7 @@ A correção com 2 a 11 réplicas depende de transações, atualização condici
 - A idempotência não tem política de expiração ou escopo por usuário autenticado.
 - Para produção, definir retenção/particionamento de auditoria, autenticação, política de expiração de idempotência, alertas/retentativas de invalidação de cache e execução controlada de migrations.
 - A disponibilidade foi coberta por testes de integração no PostgreSQL via Testcontainers; requer Docker em execução para validar localmente.
+
+## Padrão de commits
+
+O histórico segue Conventional Commits, com mensagens curtas em inglês: `tipo: descrição`. Use `feat` para funcionalidades, `fix` para correções, `test` para testes, `docs` para documentação e `chore` para manutenção e configuração. Exemplos do histórico: `feat: list users and loans` e `docs: document final API verification coverage`.
