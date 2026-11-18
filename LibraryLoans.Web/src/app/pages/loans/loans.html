@@ -1,0 +1,62 @@
+<section class="page loans-page">
+  <div class="page-heading">
+    <div><div class="eyebrow"><span class="eyebrow-mark"></span> CIRCULAÇÃO / MOVIMENTAÇÃO</div><h1>Empréstimos <em>em fluxo</em></h1><p class="page-subtitle">Acompanhe prazos, devoluções e novas retiradas.</p></div>
+    <button class="button button-primary" type="button" (click)="openCreate()" [disabled]="availableBooks().length === 0 || readers().length === 0"><ng-icon name="lucidePlus" /> Registrar empréstimo</button>
+  </div>
+
+  @if (error()) { <div class="notice notice-error"><ng-icon name="lucideCircleAlert" /><span>{{ error() }}</span><button class="text-button" type="button" (click)="error.set('')"><ng-icon name="lucideX" /></button></div> }
+
+  <div class="loan-summary">
+    <div class="loan-summary-main"><span>EM CIRCULAÇÃO</span><strong>{{ loading() ? '—' : activeCount().toString().padStart(2, '0') }}</strong><small>empréstimos ainda ativos</small><span class="summary-orbit"></span></div>
+    <div class="loan-summary-note"><span class="summary-index">01 / HOJE</span><strong>{{ overdueCount() ? overdueCount() + ' prazo(s) vencido(s)' : 'Prazos sob controle' }}</strong><small>Uma visão única das movimentações da unidade.</small></div>
+    <div class="loan-summary-stat"><span>REGISTROS VISÍVEIS</span><strong>{{ loans().length.toString().padStart(2, '0') }}</strong></div>
+  </div>
+
+  <div class="loan-toolbar">
+    <div class="segmented" role="group" aria-label="Filtrar empréstimos por status">
+      <button type="button" [class.segment-active]="statusFilter() === 'All'" (click)="statusFilter.set('All')">Todos <small>{{ loans().length }}</small></button>
+      <button type="button" [class.segment-active]="statusFilter() === 'Active'" (click)="statusFilter.set('Active')">Ativos <small>{{ activeCount() }}</small></button>
+      <button type="button" [class.segment-active]="statusFilter() === 'Returned'" (click)="statusFilter.set('Returned')">Devolvidos</button>
+      <button type="button" [class.segment-active]="statusFilter() === 'Canceled'" (click)="statusFilter.set('Canceled')">Cancelados</button>
+    </div>
+    <label class="search-field loan-search"><ng-icon name="lucideSearch" /><input type="search" [ngModel]="search()" (ngModelChange)="search.set($event)" placeholder="Livro, ISBN ou leitor" aria-label="Buscar empréstimos" /></label>
+    <button class="button button-quiet" type="button" aria-label="Atualizar empréstimos" title="Atualizar empréstimos" (click)="load()"><ng-icon name="lucideRefreshCw" /></button>
+  </div>
+
+  <div class="panel loan-table-panel">
+    @if (loading()) {
+      <div class="skeleton-table"><i></i><i></i><i></i><i></i></div>
+    } @else if (filteredLoans().length === 0) {
+      <div class="empty-state"><span><ng-icon name="lucideBookOpen" /></span><h2>Nenhum empréstimo nesta visualização</h2><p>Ajuste os filtros ou registre um novo empréstimo.</p><button class="button button-primary" type="button" (click)="openCreate()"><ng-icon name="lucidePlus" /> Registrar empréstimo</button></div>
+    } @else {
+      <div class="table-wrap"><table class="data-table loan-table"><thead><tr><th>LEITOR</th><th>LIVRO / ISBN</th><th>RETIRADA</th><th>DEVOLUÇÃO PREVISTA</th><th>STATUS</th><th>AÇÕES</th></tr></thead><tbody>
+        @for (loan of filteredLoans(); track loan.id) {
+          <tr>
+            <td><div class="reader-cell"><span class="reader-mini">{{ (readerById().get(loan.readerId) ?? 'L').slice(0, 1).toUpperCase() }}</span><span><strong>{{ readerById().get(loan.readerId) ?? 'Leitor não localizado' }}</strong><small>{{ loan.readerId.slice(0, 8) }}</small></span></div></td>
+            <td><strong>{{ bookById().get(loan.bookId)?.title ?? 'Livro não localizado' }}</strong><small class="cell-sub">{{ bookById().get(loan.bookId)?.isbn ?? loan.bookId.slice(0, 8) }}</small></td>
+            <td>{{ loan.borrowedAtUtc | date:'dd MMM yyyy':'':'pt-BR' }}</td>
+            <td><span [class.due-overdue]="loan.status === 'Active' && relativeDueLabel(loan.dueAtUtc).startsWith('Atrasado')">{{ loan.dueAtUtc | date:'dd MMM yyyy':'':'pt-BR' }}</span><small class="cell-sub">{{ loan.status === 'Active' ? relativeDueLabel(loan.dueAtUtc) : loan.returnedAtUtc ? 'Devolvido ' + (loan.returnedAtUtc | date:'dd MMM':'':'pt-BR') : loan.canceledAtUtc ? 'Cancelado ' + (loan.canceledAtUtc | date:'dd MMM':'':'pt-BR') : '—' }}</small></td>
+            <td><span class="status-pill" [class]="loanStatusClass(loan.status)"><i></i>{{ loanStatusLabel(loan.status) }}</span></td>
+            <td><div class="row-actions">@if (loan.status === 'Active') { <button class="icon-button action-return" type="button" title="Registrar devolução" aria-label="Registrar devolução" (click)="returnLoan(loan)"><ng-icon name="lucideRotateCcw" /></button><button class="icon-button action-cancel" type="button" title="Cancelar empréstimo" aria-label="Cancelar empréstimo" (click)="cancelLoan(loan)"><ng-icon name="lucideX" /></button> } @else { <span class="muted-action">Finalizado</span> }</div></td>
+          </tr>
+        }
+      </tbody></table></div>
+      <div class="table-foot"><span>{{ filteredLoans().length }} registro(s)</span><span>Ordenado por retirada mais recente</span></div>
+    }
+  </div>
+
+  @if (showForm()) {
+    <div class="overlay" (click)="closeForm()"><section class="form-dialog" role="dialog" aria-modal="true" aria-labelledby="loan-form-title" (click)="$event.stopPropagation()">
+      <div class="drawer-head"><span class="eyebrow">CIRCULAÇÃO / NOVO REGISTRO</span><button class="icon-button" type="button" aria-label="Fechar" [disabled]="saving()" (click)="closeForm()"><ng-icon name="lucideX" /></button></div>
+      <h2 id="loan-form-title">Registrar empréstimo</h2><p class="page-subtitle">A disponibilidade é confirmada novamente pela API no momento do registro.</p>
+      <form class="stack-form" #loanForm="ngForm" (ngSubmit)="loanForm.valid && createLoan()">
+        <label>Livro<select name="bookId" required [disabled]="saving()" [(ngModel)]="form.bookId"><option value="" disabled>Selecione um livro disponível</option>@for (book of availableBooks(); track book.id) { <option [value]="book.id">{{ book.title }} · {{ book.availableCopies }} disponível(is)</option> }</select></label>
+        <label>Leitor<select name="readerId" required [disabled]="saving()" [(ngModel)]="form.readerId"><option value="" disabled>Selecione o leitor</option>@for (reader of readers(); track reader.id) { <option [value]="reader.id">{{ reader.name }}</option> }</select></label>
+        <label>Devolução prevista<input name="dueDate" type="date" required [disabled]="saving()" [(ngModel)]="form.dueDate" /></label>
+        <div class="form-note"><ng-icon name="lucideCircleCheck" /><span>Uma chave de idempotência será criada para proteger o envio.</span></div>
+        @if (error()) { <div class="form-error">{{ error() }}</div> }
+        <div class="form-actions"><button class="button button-quiet" type="button" [disabled]="saving()" (click)="closeForm()">Cancelar</button><button class="button button-primary" type="submit" [disabled]="saving() || loanForm.invalid || !availableBooks().length || !readers().length">{{ saving() ? 'Registrando…' : 'Confirmar empréstimo' }}</button></div>
+      </form>
+    </section></div>
+  }
+</section>

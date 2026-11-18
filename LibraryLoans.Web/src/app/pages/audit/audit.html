@@ -1,0 +1,40 @@
+<section class="page audit-page">
+  <div class="page-heading">
+    <div><div class="eyebrow"><span class="eyebrow-mark"></span> RASTREABILIDADE / EVENTOS</div><h1>Trilha de <em>auditoria</em></h1><p class="page-subtitle">Cada mudança relevante, registrada com contexto e correlação.</p></div>
+    <button class="button button-quiet" type="button" aria-label="Atualizar eventos" title="Atualizar eventos" (click)="load()"><ng-icon name="lucideRefreshCw" /></button>
+  </div>
+
+  @if (error()) { <div class="notice notice-error"><ng-icon name="lucideCircleAlert" /><span>{{ error() }}</span><button class="text-button" type="button" (click)="error.set('')"><ng-icon name="lucideX" /></button></div> }
+
+  <div class="audit-summary"><div class="audit-summary-mark"><ng-icon name="lucideHistory" /></div><div><strong>{{ events().length.toString().padStart(2, '0') }}</strong><span>EVENTOS NA CONSULTA</span></div><small>Exibindo até 200 registros · mais recentes primeiro</small></div>
+
+  <form class="audit-filters panel" (ngSubmit)="load()">
+    <div class="filter-caption"><ng-icon name="lucideFilter" /><span>FILTRAR EVENTOS</span></div>
+    <label>Entidade<select name="entityName" [(ngModel)]="filter.entityName"><option value="">Todas</option><option value="Book">Livro</option><option value="Loan">Empréstimo</option></select></label>
+    <label class="entity-id-field">ID da entidade<input name="entityId" [(ngModel)]="filter.entityId" placeholder="UUID completo" /></label>
+    <button class="button button-primary" type="submit" [disabled]="loading()"><ng-icon name="lucideSearch" /> Aplicar filtros</button>
+  </form>
+
+  <div class="panel audit-panel">
+    @if (loading()) { <div class="skeleton-table"><i></i><i></i><i></i><i></i></div> }
+    @else if (events().length === 0) { <div class="empty-state"><span><ng-icon name="lucideHistory" /></span><h2>Nenhum evento encontrado</h2><p>Amplie os filtros ou aguarde novas movimentações.</p></div> }
+    @else {
+      <div class="audit-list-head"><span>EVENTO</span><span>ENTIDADE</span><span>ATOR</span><span>HORÁRIO</span><span></span></div>
+      @for (event of events(); track event.id) {
+        <article class="audit-event" [class.audit-event-open]="selected() === event.id">
+          <button class="audit-event-row" type="button" (click)="toggleDetails(event.id)">
+            <span class="audit-event-name"><span class="event-mark" [class.event-loan]="event.entityName === 'Loan'"><ng-icon [name]="event.entityName === 'Loan' ? 'lucideBookOpen' : 'lucideLibrary'" /></span><strong>{{ event.action }}</strong></span>
+            <span class="audit-entity"><small>{{ event.entityName === 'Loan' ? 'EMPRÉSTIMO' : 'LIVRO' }}</small><code>{{ event.entityId.slice(0, 8) }}</code></span>
+            <span class="audit-actor">{{ event.actor }}</span>
+            <span class="audit-time">{{ event.timestampUtc | date:'dd MMM yyyy, HH:mm:ss':'':'pt-BR' }}</span>
+            <span class="audit-expand"><ng-icon [name]="selected() === event.id ? 'lucideChevronDown' : 'lucideChevronRight'" /></span>
+          </button>
+          @if (selected() === event.id) {
+            <div class="audit-details"><div><span>CORRELATION ID</span><code>{{ event.correlationId }}</code></div><div><span>EVENT ID</span><code>{{ event.id }}</code></div><div class="audit-payload"><span>DETALHES</span><pre>{{ event.details }}</pre></div></div>
+          }
+        </article>
+      }
+      <div class="table-foot"><span>{{ events().length }} evento(s)</span><span>Origem: PostgreSQL · trilha de domínio</span></div>
+    }
+  </div>
+</section>

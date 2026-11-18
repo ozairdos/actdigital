@@ -1,0 +1,20 @@
+@use './app/app';
+@use './app/shared/presentation';
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+	color-scheme: light;
+	font-family: 'DM Sans', 'Segoe UI', sans-serif;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	--font-mono: 'DM Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { min-width: 320px; min-height: 100%; margin: 0; }
+body { background: #f4f6f1; }
+button, input, select, textarea { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #86b93e; outline-offset: 2px; }
+::selection { color: #18211b; background: #c7f36b; }

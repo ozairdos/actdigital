@@ -1,0 +1,51 @@
+<div class="app-frame">
+  <aside class="sidebar" [class.sidebar-open]="sidebarOpen()">
+    <a class="brand" routerLink="/" (click)="closeNav()" aria-label="Acervo, visão geral">
+      <span class="brand-mark"><ng-icon name="lucideLibrary" /></span>
+      <span class="brand-copy"><strong>acervo</strong><small>LIBRARY SYSTEMS</small></span>
+    </a>
+
+    <div class="workspace-label">OPERAÇÃO</div>
+    <nav class="primary-nav" aria-label="Navegação principal">
+      <a routerLink="/" routerLinkActive="nav-active" [routerLinkActiveOptions]="{ exact: true }" (click)="closeNav()">
+        <ng-icon name="lucideHome" /><span>Visão geral</span><kbd>01</kbd>
+      </a>
+      <a routerLink="/loans" routerLinkActive="nav-active" (click)="closeNav()">
+        <ng-icon name="lucideBookOpen" /><span>Empréstimos</span><kbd>02</kbd>
+      </a>
+      <a routerLink="/books" routerLinkActive="nav-active" (click)="closeNav()">
+        <ng-icon name="lucideLibrary" /><span>Catálogo</span><kbd>03</kbd>
+      </a>
+      <a routerLink="/readers" routerLinkActive="nav-active" (click)="closeNav()">
+        <ng-icon name="lucideUsers" /><span>Leitores</span><kbd>04</kbd>
+      </a>
+      <a routerLink="/audit" routerLinkActive="nav-active" (click)="closeNav()">
+        <ng-icon name="lucideHistory" /><span>Auditoria</span><kbd>05</kbd>
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="integrity-card">
+        <div class="integrity-head"><span class="status-dot" [class.status-offline]="ready() === 'offline'"></span><span>API</span><strong>{{ ready() === 'online' ? 'ONLINE' : ready() === 'offline' ? 'OFFLINE' : 'VERIFICANDO' }}</strong></div>
+        <div class="integrity-line"><span>PostgreSQL</span><i [class.is-online]="ready() === 'online'"></i></div>
+        <div class="integrity-line"><span>Redis cache</span><i [class.is-online]="ready() === 'online'"></i></div>
+      </div>
+      <div class="operator"><span class="operator-avatar">OP</span><span><strong>Operação</strong><small>Unidade central</small></span><ng-icon name="lucideMoreHorizontal" /></div>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <button class="icon-button mobile-menu" type="button" aria-label="Abrir navegação" (click)="sidebarOpen.set(!sidebarOpen())"><ng-icon name="lucideMenu" /></button>
+      <div class="breadcrumb"><span>ACERVO</span><ng-icon name="lucideChevronRight" /><strong>{{ sectionName }}</strong></div>
+      <div class="topbar-tools">
+        <label class="global-search"><ng-icon name="lucideSearch" /><input type="search" placeholder="Buscar livro ou ISBN" aria-label="Buscar livro ou ISBN" (keydown.enter)="onSearch($event)" /><kbd>↵</kbd></label>
+        <span class="live-clock"><i></i> SISTEMA OPERACIONAL</span>
+      </div>
+    </header>
+
+    <main class="page-shell"><router-outlet /></main>
+    <footer class="app-footer"><span>ACERVO · SISTEMA DE OPERAÇÃO BIBLIOTECÁRIA</span><span>BUILD 1.0 <b>·</b> {{ now | date:'yyyy' }}</span></footer>
+  </div>
+  @if (sidebarOpen()) { <button class="scrim" type="button" aria-label="Fechar navegação" (click)="closeNav()"></button> }
+</div>

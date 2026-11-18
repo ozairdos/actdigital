@@ -1,0 +1,103 @@
+<section class="page dashboard-page">
+  <div class="page-heading dashboard-heading">
+    <div>
+      <div class="eyebrow"><span class="eyebrow-mark"></span> {{ today | date:'EEEE':'':'pt-BR' | uppercase }} · OPERAÇÃO DIÁRIA</div>
+      <h1>Visão <em>geral</em></h1>
+      <p class="page-subtitle">A biblioteca, em um só lugar. O que precisa de atenção agora?</p>
+    </div>
+    <div class="heading-actions">
+      <button class="button button-quiet" type="button" aria-label="Atualizar dados" title="Atualizar dados" (click)="load()"><ng-icon name="lucideRefreshCw" /></button>
+      <a class="button button-primary" routerLink="/loans"><ng-icon name="lucidePlus" /> Novo empréstimo</a>
+    </div>
+  </div>
+
+  <p class="muted-note">Indicadores calculados sobre os 200 empréstimos mais recentes.</p>
+
+  @if (error()) {
+    <div class="notice notice-error"><ng-icon name="lucideCircleAlert" /><span>{{ error() }}</span><button class="text-button" type="button" (click)="load()">Tentar novamente</button></div>
+  }
+
+  @if (!error()) {
+  <div class="metrics-grid">
+    <article class="metric-card metric-featured">
+      <div class="metric-top"><span>EMPRÉSTIMOS ATIVOS</span><ng-icon name="lucideBookOpen" /></div>
+      <div class="metric-value">{{ loading() ? '—' : activeLoans().length.toString().padStart(2, '0') }}</div>
+      <div class="metric-foot"><span class="metric-caption">{{ overdueLoans().length }} em atraso</span><span class="metric-arrow"><ng-icon name="lucideArrowUpRight" /></span></div>
+      <div class="metric-signal"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-top"><span>EXEMPLARES LIVRES</span><ng-icon name="lucideLibrary" /></div>
+      <div class="metric-value">{{ loading() ? '—' : availableCopies().toString().padStart(2, '0') }}<small>/ {{ totalCopies() }}</small></div>
+      <div class="metric-foot"><span class="metric-caption">{{ inventoryFill() }}% do acervo disponível</span><span class="metric-arrow"><ng-icon name="lucideArrowUpRight" /></span></div>
+      <div class="metric-progress"><i [style.width.%]="inventoryFill()"></i></div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-top"><span>LEITORES CADASTRADOS</span><ng-icon name="lucideUsers" /></div>
+      <div class="metric-value">{{ loading() ? '—' : readers().length.toString().padStart(2, '0') }}</div>
+      <div class="metric-foot"><span class="metric-caption">Perfis ativos na unidade</span><a class="metric-arrow" routerLink="/readers" aria-label="Abrir leitores"><ng-icon name="lucideArrowUpRight" /></a></div>
+    </article>
+    <article class="metric-card metric-alert" [class.metric-alert-hot]="overdueLoans().length > 0">
+      <div class="metric-top"><span>PRECISAM DE ATENÇÃO</span><ng-icon name="lucideClock3" /></div>
+      <div class="metric-value">{{ loading() ? '—' : overdueLoans().length.toString().padStart(2, '0') }}</div>
+      <div class="metric-foot"><span class="metric-caption">Empréstimos vencidos</span><a class="metric-arrow" routerLink="/loans"><ng-icon name="lucideArrowUpRight" /></a></div>
+    </article>
+  </div>
+
+  <div class="dashboard-grid">
+    <section class="panel activity-panel">
+      <div class="panel-heading"><div><div class="eyebrow">RITMO DA UNIDADE</div><h2>Movimento recente</h2></div><span class="panel-meta">7 DIAS</span></div>
+      <div class="activity-chart" aria-label="Empréstimos realizados nos últimos sete dias">
+        @for (day of weeklyActivity(); track day.label) {
+          <div class="chart-column"><div class="chart-track"><i [style.height.%]="day.height"></i><span>{{ day.count }}</span></div><small>{{ day.label }}</small></div>
+        }
+      </div>
+      <div class="chart-legend"><span><i></i> Empréstimos registrados</span><strong>{{ loans().length }} no total visível</strong></div>
+    </section>
+
+    <section class="panel attention-panel">
+      <div class="panel-heading"><div><div class="eyebrow">RADAR DE PRAZOS</div><h2>Em acompanhamento</h2></div><span class="attention-count">{{ overdueLoans().length.toString().padStart(2, '0') }}</span></div>
+      @if (loading()) {
+        <div class="skeleton-lines"><i></i><i></i><i></i></div>
+      } @else if (overdueLoans().length === 0) {
+        <div class="empty-inline"><span><ng-icon name="lucideCircleCheck" /></span><div><strong>Tudo em dia</strong><small>Nenhum empréstimo vencido no momento.</small></div></div>
+      } @else {
+        <div class="attention-list">
+          @for (loan of overdueLoans().slice(0, 3); track loan.id) {
+            <a class="attention-row" routerLink="/loans"><span class="attention-icon"><ng-icon name="lucideClock3" /></span><span class="attention-copy"><strong>{{ bookById().get(loan.bookId) ?? 'Livro sem título' }}</strong><small>Leitor {{ loan.readerId.slice(0, 8) }}</small></span><span class="overdue-label">{{ relativeDueLabel(loan.dueAtUtc) }}</span></a>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="panel recent-panel">
+      <div class="panel-heading"><div><div class="eyebrow">ÚLTIMAS MOVIMENTAÇÕES</div><h2>Empréstimos</h2></div><a class="panel-link" routerLink="/loans">Ver todos <ng-icon name="lucideArrowUpRight" /></a></div>
+      @if (loading()) {
+        <div class="skeleton-table"><i></i><i></i><i></i></div>
+      } @else if (recentLoans().length === 0) {
+        <div class="empty-inline"><span><ng-icon name="lucideBookOpen" /></span><div><strong>Sem movimentações</strong><small>Os empréstimos recentes aparecerão aqui.</small></div></div>
+      } @else {
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>LEITOR / LIVRO</th><th>REGISTRADO</th><th>PRAZO</th><th>STATUS</th></tr></thead><tbody>
+          @for (loan of recentLoans(); track loan.id) {
+            <tr><td><strong>{{ bookById().get(loan.bookId) ?? 'Livro sem título' }}</strong><small class="cell-sub">Leitor {{ loan.readerId.slice(0, 8) }}</small></td><td>{{ loan.borrowedAtUtc | date:'dd MMM, HH:mm':'':'pt-BR' }}</td><td>{{ loan.dueAtUtc | date:'dd MMM yyyy':'':'pt-BR' }}</td><td><span class="status-pill" [class]="loanStatusClass(loan.status)"><i></i>{{ loanStatusLabel(loan.status) }}</span></td></tr>
+          }
+        </tbody></table></div>
+      }
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-heading"><div><div class="eyebrow">TRILHA DE OPERAÇÃO</div><h2>Últimos eventos</h2></div><a class="icon-link" routerLink="/audit" aria-label="Abrir auditoria"><ng-icon name="lucideArrowUpRight" /></a></div>
+      @if (loading()) {
+        <div class="skeleton-lines"><i></i><i></i><i></i></div>
+      } @else {
+        <div class="event-list">
+          @for (event of audit().slice(0, 4); track event.id) {
+            <div class="event-row"><span class="event-mark" [class.event-loan]="event.entityName === 'Loan'"><ng-icon [name]="event.entityName === 'Loan' ? 'lucideBookOpen' : 'lucideLibrary'" /></span><span class="event-copy"><strong>{{ event.action }}</strong><small>{{ event.entityName }} · {{ event.entityId.slice(0, 8) }}</small></span><time>{{ event.timestampUtc | date:'HH:mm':'':'pt-BR' }}</time></div>
+          } @empty {
+            <div class="empty-inline"><span><ng-icon name="lucideHistory" /></span><div><strong>Sem eventos recentes</strong><small>A trilha de auditoria aparecerá aqui.</small></div></div>
+          }
+        </div>
+      }
+    </section>
+  </div>
+  }
+</section>

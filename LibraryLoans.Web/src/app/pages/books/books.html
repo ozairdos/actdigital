@@ -1,0 +1,65 @@
+<section class="page">
+  <div class="page-heading">
+    <div><div class="eyebrow"><span class="eyebrow-mark"></span> ACERVO / INVENTÁRIO</div><h1>O <em>catálogo</em></h1><p class="page-subtitle">Livros, exemplares e disponibilidade da coleção.</p></div>
+    <button class="button button-primary" type="button" (click)="openCreate()"><ng-icon name="lucidePlus" /> Novo livro</button>
+  </div>
+
+  @if (error()) { <div class="notice notice-error"><ng-icon name="lucideCircleAlert" /><span>{{ error() }}</span><button class="text-button" type="button" (click)="error.set('')"><ng-icon name="lucideX" /></button></div> }
+
+  <div class="catalog-toolbar">
+    <label class="search-field"><ng-icon name="lucideSearch" /><input type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Título, autor ou ISBN" aria-label="Buscar no catálogo" /></label>
+    <span class="result-count"><strong>{{ filteredBooks().length.toString().padStart(2, '0') }}</strong> TÍTULOS</span>
+    <button class="button button-quiet" type="button" aria-label="Atualizar catálogo" title="Atualizar catálogo" (click)="load()"><ng-icon name="lucideRefreshCw" /></button>
+  </div>
+
+  @if (loading()) {
+    <div class="catalog-skeleton"><i></i><i></i><i></i><i></i></div>
+  } @else if (filteredBooks().length === 0) {
+    <div class="empty-state"><span><ng-icon name="lucideLibrary" /></span><h2>{{ query() ? 'Nenhum livro encontrado' : 'Catálogo vazio' }}</h2><p>{{ query() ? 'Tente outro título, autor ou ISBN.' : 'Cadastre o primeiro livro para começar a operação.' }}</p>@if (!query()) { <button class="button button-primary" type="button" (click)="openCreate()"><ng-icon name="lucidePlus" /> Cadastrar livro</button> }</div>
+  } @else {
+    <div class="book-grid">
+      @for (book of filteredBooks(); track book.id; let index = $index) {
+        <article class="book-card" [style.animation-delay.ms]="index * 45">
+          <div class="book-card-top"><span class="book-code">BK / {{ book.id.slice(0, 4).toUpperCase() }}</span><button class="icon-button card-menu" type="button" title="Ver detalhes" aria-label="Ver detalhes do livro" (click)="selectBook(book)"><ng-icon name="lucideMoreHorizontal" /></button></div>
+          <div class="book-cover" [class.cover-alt]="index % 3 === 1" [class.cover-light]="index % 3 === 2"><span>{{ book.author.slice(0, 1).toUpperCase() }}</span><small>{{ book.title.slice(0, 24) }}</small><i>ACERVO</i></div>
+          <div class="book-card-content"><div class="book-author">{{ book.author }}</div><h2>{{ book.title }}</h2><div class="book-isbn">ISBN {{ book.isbn }}</div></div>
+          <div class="book-inventory"><div><span>DISPONÍVEIS</span><strong [class.stock-empty]="book.availableCopies === 0">{{ book.availableCopies }}<small> / {{ book.totalCopies }}</small></strong></div><div class="stock-track"><i [style.width.%]="book.totalCopies ? (book.availableCopies / book.totalCopies) * 100 : 0"></i></div></div>
+          <div class="book-card-actions"><button class="text-action" type="button" (click)="selectBook(book)">Histórico <ng-icon name="lucideArrowUpRight" /></button><button class="text-action" type="button" (click)="openEdit(book)">Editar</button></div>
+        </article>
+      }
+    </div>
+  }
+
+  @if (selectedBook(); as book) {
+    <div class="overlay" (click)="selectedBook.set(null)">
+      <aside class="detail-drawer" (click)="$event.stopPropagation()">
+        <div class="drawer-head"><span class="eyebrow">FICHA DO ACERVO</span><button class="icon-button" type="button" aria-label="Fechar" (click)="selectedBook.set(null)"><ng-icon name="lucideX" /></button></div>
+        <div class="drawer-cover"><span>{{ book.author.slice(0, 1).toUpperCase() }}</span><small>{{ book.isbn }}</small></div>
+        <div class="eyebrow">{{ book.author }}</div><h2>{{ book.title }}</h2><p class="drawer-isbn">ISBN {{ book.isbn }}</p>
+        <div class="drawer-stats"><div><span>EXEMPLARES</span><strong>{{ book.totalCopies }}</strong></div><div><span>DISPONÍVEIS</span><strong>{{ book.availableCopies }}</strong></div></div>
+        <div class="drawer-section"><div class="panel-heading"><h3>Histórico de empréstimos</h3><span class="panel-meta">{{ history().length }} REGISTROS</span></div>
+          @for (loan of history(); track loan.id) { <div class="history-row"><span class="history-marker" [class.history-returned]="loan.status !== 'Active'"></span><span><strong>{{ loanStatusLabel(loan.status) }}</strong><small>{{ loan.borrowedAtUtc | date:'dd MMM yyyy':'':'pt-BR' }} · leitor {{ loan.readerId.slice(0, 8) }}</small></span><span class="status-pill" [class]="loanStatusClass(loan.status)">{{ loanStatusLabel(loan.status) }}</span></div> }
+          @if (history().length === 0) { <p class="muted-note">Nenhum empréstimo registrado.</p> }
+        </div>
+        <div class="drawer-actions"><button class="button button-quiet" type="button" (click)="openEdit(book)"><ng-icon name="lucideBookOpen" /> Editar dados</button><button class="button button-danger" type="button" (click)="deactivateBook(book)">Desativar livro</button></div>
+      </aside>
+    </div>
+  }
+
+  @if (showForm()) {
+    <div class="overlay" (click)="showForm.set(false)">
+      <section class="form-dialog" role="dialog" aria-modal="true" aria-labelledby="book-form-title" (click)="$event.stopPropagation()">
+        <div class="drawer-head"><span class="eyebrow">CATÁLOGO / REGISTRO</span><button class="icon-button" type="button" aria-label="Fechar" (click)="showForm.set(false)"><ng-icon name="lucideX" /></button></div>
+        <h2 id="book-form-title">{{ editingId() ? 'Editar livro' : 'Novo livro' }}</h2><p class="page-subtitle">Os campos são registrados no catálogo central.</p>
+        <form class="stack-form" (ngSubmit)="saveBook()">
+          <label>Título<input name="title" required maxlength="300" [(ngModel)]="form.title" /></label>
+          <label>Autor<input name="author" required maxlength="200" [(ngModel)]="form.author" /></label>
+          <label>ISBN<input name="isbn" required maxlength="20" [(ngModel)]="form.isbn" /></label>
+          <label>Quantidade total<input name="totalCopies" type="number" min="0" required [(ngModel)]="form.totalCopies" /></label>
+          @if (error()) { <div class="form-error">{{ error() }}</div> }
+          <div class="form-actions"><button class="button button-quiet" type="button" (click)="showForm.set(false)">Cancelar</button><button class="button button-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Salvando…' : editingId() ? 'Salvar alterações' : 'Cadastrar livro' }}</button></div>
+        </form>
+      </section>
+    </div>
+  }
+</section>
